@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { CreateStoryDialog } from "./CreateStoryDialog";
 
 interface Story {
   id: string;
@@ -18,6 +19,7 @@ interface Story {
 
 export const StoriesSection = () => {
   const [stories, setStories] = useState<Story[]>([]);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   useEffect(() => {
     loadStories();
@@ -59,20 +61,24 @@ export const StoriesSection = () => {
   };
 
   return (
-    <Card className="p-4">
-      <ScrollArea className="w-full">
-        <div className="flex gap-4">
-          {/* Add Story Button */}
-          <div className="flex-shrink-0">
-            <div className="relative cursor-pointer group">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-r from-primary to-accent p-0.5">
-                <div className="w-full h-full rounded-full bg-background flex items-center justify-center">
-                  <Plus className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
+    <>
+      <Card className="p-4">
+        <ScrollArea className="w-full">
+          <div className="flex gap-4">
+            {/* Add Story Button */}
+            <div className="flex-shrink-0">
+              <div 
+                className="relative cursor-pointer group"
+                onClick={() => setIsCreateDialogOpen(true)}
+              >
+                <div className="w-16 h-16 rounded-full bg-gradient-to-r from-primary to-accent p-0.5">
+                  <div className="w-full h-full rounded-full bg-background flex items-center justify-center">
+                    <Plus className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
+                  </div>
                 </div>
+                <p className="text-xs text-center mt-1 font-medium">Add Story</p>
               </div>
-              <p className="text-xs text-center mt-1 font-medium">Add Story</p>
             </div>
-          </div>
 
           {/* Stories */}
           {stories.map((story) => (
@@ -93,5 +99,10 @@ export const StoriesSection = () => {
         </div>
       </ScrollArea>
     </Card>
+    <CreateStoryDialog 
+      open={isCreateDialogOpen} 
+      onOpenChange={setIsCreateDialogOpen}
+    />
+    </>
   );
 };
