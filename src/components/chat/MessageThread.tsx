@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Phone, Video, MoreVertical } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { TypingIndicator } from "./TypingIndicator";
 
 interface Message {
   id: string;
@@ -18,6 +19,12 @@ interface Message {
   };
 }
 
+interface PresenceState {
+  user_id: string;
+  typing: boolean;
+  online_at: string;
+}
+
 interface MessageThreadProps {
   conversationId: string | null;
 }
@@ -26,7 +33,10 @@ export const MessageThread = ({ conversationId }: MessageThreadProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [typingUsers, setTypingUsers] = useState<Record<string, any>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const channelRef = useRef<any>(null);
 
   useEffect(() => {
     loadCurrentUser();
@@ -36,8 +46,18 @@ export const MessageThread = ({ conversationId }: MessageThreadProps) => {
     if (conversationId) {
       loadMessages();
       subscribeToMessages();
+      setupPresence();
     }
-  }, [conversationId]);
+    
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, [conversationId, currentUserId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -87,9 +107,85 @@ export const MessageThread = ({ conversationId }: MessageThreadProps) => {
     };
   };
 
+  const setupPresence = async () => {
+    if (!conversationId || !currentUserId) return;
+
+    const channel = supabase.channel(`presence:${conversationId}`, {
+      config: {
+        presence: {
+          key: currentUserId,
+        },
+      },
+    });
+
+    channel
+      .on("presence", { event: "sync" }, () => {
+        const state = channel.presenceState<PresenceState>();
+        const typing: Record<string, PresenceState> = {};
+        
+        Object.keys(state).forEach((key) => {
+          if (key !== currentUserId) {
+            const presences = state[key];
+            if (presences && presences.length > 0) {
+              const presence = presences[0] as PresenceState;
+              if (presence.typing) {
+                typing[key] = presence;
+              }
+            }
+          }
+        });
+        
+        setTypingUsers(typing);
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({
+            user_id: currentUserId,
+            typing: false,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
+
+    channelRef.current = channel;
+  };
+
+  const updateTypingStatus = async (isTyping: boolean) => {
+    if (!channelRef.current || !currentUserId) return;
+
+    await channelRef.current.track({
+      user_id: currentUserId,
+      typing: isTyping,
+      online_at: new Date().toISOString(),
+    });
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewMessage(e.target.value);
+
+    // Update typing status to true
+    updateTypingStatus(true);
+
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set new timeout to clear typing status after 2 seconds of inactivity
+    typingTimeoutRef.current = setTimeout(() => {
+      updateTypingStatus(false);
+    }, 2000);
+  };
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !conversationId || !currentUserId) return;
+
+    // Clear typing status before sending
+    updateTypingStatus(false);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
 
     const { error } = await supabase.from("messages").insert({
       conversation_id: conversationId,
@@ -182,6 +278,11 @@ export const MessageThread = ({ conversationId }: MessageThreadProps) => {
               </div>
             );
           })}
+          
+          {/* Typing Indicator */}
+          {Object.keys(typingUsers).length > 0 && (
+            <TypingIndicator />
+          )}
         </div>
       </ScrollArea>
 
@@ -190,7 +291,7 @@ export const MessageThread = ({ conversationId }: MessageThreadProps) => {
         <div className="flex items-center gap-2">
           <Input
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={handleInputChange}
             placeholder="Type a message..."
             className="flex-1 rounded-full"
           />
